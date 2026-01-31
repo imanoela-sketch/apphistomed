@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import App from './app'; // Agora apontando para 'app' minúsculo
 import './index.css';
 
 const rootElement = document.getElementById('root');
