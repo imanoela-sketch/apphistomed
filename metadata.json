@@ -1,0 +1,5 @@
+{
+  "name": "HistoMed Atlas",
+  "description": "Um aplicativo completo de histologia para estudantes de medicina, baseado em Junqueira & Carneiro. Inclui biblioteca, quiz e microscópio virtual com IA.",
+  "requestFramePermissions": []
+}
