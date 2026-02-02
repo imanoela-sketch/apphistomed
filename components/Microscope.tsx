@@ -1,7 +1,7 @@
 import React, { analyzeImage } from 'react';
 import { Camera, Upload, Loader2, Microscope as MicroscopeIcon } from 'lucide-react';
 // A linha abaixo é o ajuste crítico: o nome deve ser 'gemini' para bater com seu arquivo
-import { analyzeImage } from '../services/Gemini';
+import { analyzeImage } from '../services/gemini.ts';
 
 interface AnalysisResult {
   diagnosis: string;
