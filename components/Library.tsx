@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, ChevronRight, Loader2, Info } from 'lucide-react';
 import { TOPICS } from '../constants';
 import { Topic } from '../types';
-import { fetchLibraryContent } from '../services/geminiService';
+import { fetchLibraryContent } from '../services/gemini';
 import ReactMarkdown from 'react-markdown';
 
 const Library: React.FC = () => {
