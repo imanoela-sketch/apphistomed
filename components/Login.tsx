@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User, UserRole } from '../types';
 import { User as UserIcon, Lock, ArrowRight, Mail } from 'lucide-react';
 import Logo from './Logo';
-
+import { supabase } from '../services/supabase';
 interface LoginProps {
   onLogin: (user: User) => void;
 }
@@ -11,14 +11,64 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isStudent, setIsStudent] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [error, setError] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); ---=
     setError('');
 
-    if (isStudent) {
+    if (isStudent) {// ✅ Cadastro/Login REAL no Supabase
+try {
+  // 1) tenta cadastrar
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { name },
+    },
+  });
+
+  // Se o usuário já existe, tenta fazer login
+  if (signUpError) {
+    const msg = signUpError.message.toLowerCase();
+
+    if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      // Login OK
+      onLogin({
+        name,
+        email,
+        role: 'student',
+      } as any);
+
+      return;
+    }
+
+    // qualquer outro erro
+    setError(signUpError.message);
+    return;
+  }
+
+  // Cadastro OK
+  onLogin({
+    name,
+    email,
+    role: 'student',
+  } as any);
+
+} catch (err: any) {
+  setError(err?.message || 'Erro desconhecido ao autenticar.');
+}
       if (!name.trim() || !email.trim()) {
         setError('Por favor, preencha todos os campos.');
         return;
