@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { TOPICS } from '../constants';
 import { Topic, QuizQuestion, QuizResult, User } from '../types';
-import { fetchQuizQuestions } from '../services/geminiService';
+import { fetchQuizQuestions } from '../services/gemini';
 import { GraduationCap, CheckCircle, XCircle, RefreshCcw, Loader2, Trophy, AlertCircle, Info, User as UserIcon } from 'lucide-react';
 
 interface QuizProps {
