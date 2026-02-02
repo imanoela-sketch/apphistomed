@@ -8,7 +8,7 @@ import { QuizQuestion, MicroscopeAnalysis } from "../types";
 
 // Helper to ensure API Key exists
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = import.meta.env.API_KEY;
   if (!apiKey) {
     throw new Error("API Key not found inside environment variables.");
   }
