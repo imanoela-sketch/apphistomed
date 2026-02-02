@@ -137,3 +137,42 @@ export default function Microscope() {
     </div>
   );
 }
+export const analyzeImage = async (imageDataUrl: string): Promise<string> => {
+  try {
+    const ai = getAIClient();
+
+    // imageDataUrl vem assim: "data:image/png;base64,AAAA..."
+    const base64 = imageDataUrl.split(",")[1] || "";
+    const mimeType = imageDataUrl.substring(
+      imageDataUrl.indexOf(":") + 1,
+      imageDataUrl.indexOf(";")
+    );
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: "Descreva a lâmina e identifique as principais estruturas. Responda em português, em tópicos, de forma didática." },
+            {
+              inlineData: {
+                mimeType,
+                data: base64,
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        temperature: 0.3,
+        systemInstruction: SYSTEM_INSTRUCTION_MICROSCOPE,
+      },
+    });
+
+    return response.text || "Não foi possível gerar a análise.";
+  } catch (error: any) {
+    console.error("Erro analyzeImage:", error);
+    return "Erro ao analisar imagem. Verifique a chave de API e o formato da imagem.";
+  }
+};
