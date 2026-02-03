@@ -16,9 +16,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Admin (mantive simples como estava: senha local)
+  // Admin (mantive simples: senha local)
   const [adminPassword, setAdminPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -30,25 +30,40 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setMessage("");
   };
 
-  const validateEmail = (value: string) => value.includes("@");
+  const validateEmail = (value: string) => value.includes("@") && value.includes(".");
+
+  const resetStudentFields = () => {
+    setName("");
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+  };
 
   const handleStudentSignup = async () => {
     clearAlerts();
 
-    if (!name.trim() || !email.trim() || !password.trim()) {
+    if (!name.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
       setError("Por favor, preencha nome, e-mail e senha.");
       return;
     }
+
     if (!validateEmail(email)) {
       setError("Por favor, insira um e-mail válido.");
       return;
     }
+
     if (password.length < 6) {
       setError("A senha deve ter pelo menos 6 caracteres.");
       return;
     }
 
+    if (password !== confirmPassword) {
+      setError("As senhas não conferem.");
+      return;
+    }
+
     setLoading(true);
+
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -56,40 +71,38 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         options: {
           data: {
             name,
-            role: "student",
+            role: UserRole.STUDENT,
           },
         },
       });
 
-      if (signUpError) throw signUpError;
+      if (signUpError) {
+        setError(signUpError.message);
+        setLoading(false);
+        return;
+      }
 
-      // Se "Confirm email" estiver ligado no Supabase, o usuário só entra depois de confirmar
-      if (data.user && !data.session) {
-        setMessage(
-          "Cadastro criado! Agora confirme o e-mail (veja a caixa de entrada/Spam) para poder entrar."
-        );
+      // Observação: se Confirm email estiver ligado no Supabase, pode exigir confirmação no e-mail.
+      if (!data.user) {
+        setMessage("Conta criada. Verifique seu e-mail para confirmar o cadastro.");
+        setLoading(false);
+        resetStudentFields();
         setStudentMode("login");
         return;
       }
 
-      // Caso esteja com confirmação desligada, ele já entra direto
-      const userId = data.user?.id;
-      if (!userId) {
-        setMessage("Cadastro criado. Faça login para entrar.");
-        setStudentMode("login");
-        return;
-      }
+      setMessage("Conta criada com sucesso!");
 
       onLogin({
-        id: userId,
+        id: data.user.id,
         name,
         email,
         role: UserRole.STUDENT,
-        createdAt: new Date().toISOString(),
       });
+
+      setLoading(false);
     } catch (e: any) {
-      setError(e?.message || "Erro ao criar conta.");
-    } finally {
+      setError(e?.message ?? "Erro ao criar conta.");
       setLoading(false);
     }
   };
@@ -101,45 +114,47 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       setError("Por favor, preencha e-mail e senha.");
       return;
     }
+
     if (!validateEmail(email)) {
       setError("Por favor, insira um e-mail válido.");
       return;
     }
 
     setLoading(true);
+
     try {
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (signInError) throw signInError;
-
-      const userId = data.user?.id;
-      const userEmail = data.user?.email || email;
-      const userName =
-        (data.user?.user_metadata?.name as string | undefined) || name || "Aluno";
-
-      if (!userId) {
-        throw new Error("Não foi possível obter o usuário. Tente novamente.");
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+        return;
       }
+
+      if (!data.user) {
+        setError("Não foi possível autenticar. Tente novamente.");
+        setLoading(false);
+        return;
+      }
+
+      const metaName =
+        (data.user.user_metadata?.name as string | undefined) ||
+        (data.user.user_metadata?.full_name as string | undefined) ||
+        "";
 
       onLogin({
-        id: userId,
-        name: userName,
-        email: userEmail,
+        id: data.user.id,
+        name: metaName,
+        email: data.user.email ?? email,
         role: UserRole.STUDENT,
-        createdAt: data.user?.created_at || new Date().toISOString(),
       });
+
+      setLoading(false);
     } catch (e: any) {
-      // Erro típico quando "Confirm email" está ligado e o aluno tenta logar sem confirmar
-      const msg = e?.message || "Erro ao entrar.";
-      if (msg.toLowerCase().includes("email") && msg.toLowerCase().includes("confirm")) {
-        setError("Você precisa confirmar seu e-mail antes de entrar. Verifique a caixa de entrada/Spam.");
-      } else {
-        setError(msg);
-      }
-    } finally {
+      setError(e?.message ?? "Erro ao entrar.");
       setLoading(false);
     }
   };
@@ -147,236 +162,229 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const handleAdminLogin = () => {
     clearAlerts();
 
-    // ⚠️ Troque aqui pela sua senha real do Admin (apenas para testar)
-    const ADMIN_PASSWORD = "admin123";
+    const envAdmin =
+      (import.meta as any).env?.VITE_ADMIN_PASSWORD ||
+      (import.meta as any).env?.ADMIN_PASSWORD ||
+      "";
+
+    // Se você não configurar env, ele vai usar um padrão (troque depois!)
+    const ADMIN_PASSWORD = envAdmin || "admin123";
 
     if (!adminPassword.trim()) {
-      setError("Digite a senha do administrador.");
+      setError("Informe a senha do admin.");
       return;
     }
+
     if (adminPassword !== ADMIN_PASSWORD) {
-      setError("Senha de administrador incorreta.");
+      setError("Senha de admin incorreta.");
       return;
     }
 
     onLogin({
       id: "admin",
-      name: "Administrador",
+      name: "Admin",
       email: "admin@local",
       role: UserRole.ADMIN,
-      createdAt: new Date().toISOString(),
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    clearAlerts();
 
     if (isStudent) {
-      if (studentMode === "signup") await handleStudentSignup();
-      else await handleStudentLogin();
-    } else {
-      handleAdminLogin();
+      if (studentMode === "signup") return void handleStudentSignup();
+      return void handleStudentLogin();
     }
+
+    return void handleAdminLogin();
   };
 
+  const title = isStudent ? "Aluno" : "Admin";
+
   return (
-    <div style={{ maxWidth: 420, margin: "0 auto", padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
-        <Logo />
-      </div>
+    <div className="min-h-screen w-full flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-2xl shadow-lg p-6 bg-white">
+        <div className="flex flex-col items-center mb-6">
+          <Logo />
+          <h1 className="text-xl font-semibold mt-3">HistoMed</h1>
+          <p className="text-sm text-gray-500">Acesso ao aplicativo</p>
+        </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        <button
-          type="button"
-          onClick={() => {
-            setIsStudent(true);
-            setStudentMode("signup");
-            clearAlerts();
-          }}
-          style={{
-            flex: 1,
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            background: isStudent ? "#111" : "#fff",
-            color: isStudent ? "#fff" : "#111",
-            cursor: "pointer",
-          }}
-        >
-          <UserIcon size={16} style={{ marginRight: 6 }} />
-          Aluno
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setIsStudent(false);
-            clearAlerts();
-          }}
-          style={{
-            flex: 1,
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            background: !isStudent ? "#111" : "#fff",
-            color: !isStudent ? "#fff" : "#111",
-            cursor: "pointer",
-          }}
-        >
-          <Lock size={16} style={{ marginRight: 6 }} />
-          Admin
-        </button>
-      </div>
-
-      {isStudent && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <div className="flex gap-2 mb-4">
           <button
             type="button"
+            className={`flex-1 rounded-lg px-3 py-2 flex items-center justify-center gap-2 border ${
+              isStudent ? "bg-black text-white" : "bg-white text-black"
+            }`}
             onClick={() => {
+              clearAlerts();
+              setIsStudent(true);
               setStudentMode("signup");
-              clearAlerts();
-            }}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: studentMode === "signup" ? "#f2f2f2" : "#fff",
-              cursor: "pointer",
             }}
           >
-            Criar conta
+            <UserIcon size={18} />
+            Aluno
           </button>
+
           <button
             type="button"
+            className={`flex-1 rounded-lg px-3 py-2 flex items-center justify-center gap-2 border ${
+              !isStudent ? "bg-black text-white" : "bg-white text-black"
+            }`}
             onClick={() => {
-              setStudentMode("login");
               clearAlerts();
-            }}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: studentMode === "login" ? "#f2f2f2" : "#fff",
-              cursor: "pointer",
+              setIsStudent(false);
             }}
           >
-            Entrar
+            <Lock size={18} />
+            Admin
           </button>
         </div>
-      )}
 
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
-        {isStudent && studentMode === "signup" && (
-          <div>
-            <label style={{ fontSize: 12, color: "#444" }}>Nome</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nome completo"
-              style={{
-                width: "100%",
-                padding: 12,
-                borderRadius: 10,
-                border: "1px solid #ddd",
+        {isStudent && (
+          <div className="flex gap-2 mb-4">
+            <button
+              type="button"
+              className={`flex-1 rounded-lg px-3 py-2 border ${
+                studentMode === "signup" ? "bg-gray-100" : "bg-white"
+              }`}
+              onClick={() => {
+                clearAlerts();
+                setStudentMode("signup");
               }}
-            />
+            >
+              Criar conta
+            </button>
+
+            <button
+              type="button"
+              className={`flex-1 rounded-lg px-3 py-2 border ${
+                studentMode === "login" ? "bg-gray-100" : "bg-white"
+              }`}
+              onClick={() => {
+                clearAlerts();
+                setStudentMode("login");
+              }}
+            >
+              Entrar
+            </button>
           </div>
         )}
 
-        {isStudent && (
-          <>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="text-sm font-medium text-gray-700">{title}</div>
+
+          {isStudent && studentMode === "signup" && (
             <div>
-              <label style={{ fontSize: 12, color: "#444" }}>E-mail</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Mail size={16} />
+              <label className="text-sm text-gray-600">Nome</label>
+              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+                <UserIcon size={18} className="text-gray-400" />
                 <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="email@exemplo.com"
-                  style={{
-                    width: "100%",
-                    padding: 12,
-                    borderRadius: 10,
-                    border: "1px solid #ddd",
-                  }}
+                  className="w-full outline-none"
+                  placeholder="Nome completo"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoComplete="name"
                 />
               </div>
             </div>
+          )}
 
+          {isStudent && (
             <div>
-              <label style={{ fontSize: 12, color: "#444" }}>Senha</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Lock size={16} />
+              <label className="text-sm text-gray-600">E-mail</label>
+              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+                <Mail size={18} className="text-gray-400" />
                 <input
+                  className="w-full outline-none"
+                  placeholder="email@exemplo.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                />
+              </div>
+            </div>
+          )}
+
+          {isStudent && (
+            <div>
+              <label className="text-sm text-gray-600">Senha</label>
+              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+                <Lock size={18} className="text-gray-400" />
+                <input
+                  className="w-full outline-none"
+                  placeholder="mín. 6 caracteres"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="mín. 6 caracteres"
-                  style={{
-                    width: "100%",
-                    padding: 12,
-                    borderRadius: 10,
-                    border: "1px solid #ddd",
-                  }}
+                  autoComplete={studentMode === "signup" ? "new-password" : "current-password"}
                 />
               </div>
             </div>
-          </>
-        )}
+          )}
 
-        {!isStudent && (
-          <div>
-            <label style={{ fontSize: 12, color: "#444" }}>Senha do Admin</label>
-            <input
-              type="password"
-              value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
-              placeholder="Digite a senha"
-              style={{
-                width: "100%",
-                padding: 12,
-                borderRadius: 10,
-                border: "1px solid #ddd",
-              }}
-            />
+          {isStudent && studentMode === "signup" && (
+            <div>
+              <label className="text-sm text-gray-600">Confirmar senha</label>
+              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+                <Lock size={18} className="text-gray-400" />
+                <input
+                  className="w-full outline-none"
+                  placeholder="repita a senha"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+          )}
+
+          {!isStudent && (
+            <div>
+              <label className="text-sm text-gray-600">Senha do Admin</label>
+              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+                <Lock size={18} className="text-gray-400" />
+                <input
+                  className="w-full outline-none"
+                  placeholder="senha do admin"
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-sm">
+              {error}
+            </div>
+          )}
+
+          {message && (
+            <div className="rounded-lg bg-green-50 text-green-700 px-3 py-2 text-sm">
+              {message}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-black text-white py-3 flex items-center justify-center gap-2 disabled:opacity-60"
+            disabled={loading}
+          >
+            {loading ? "Carregando..." : isStudent ? (studentMode === "signup" ? "Criar conta" : "Entrar") : "Entrar"}
+            <ArrowRight size={18} />
+          </button>
+        </form>
+
+        {isStudent && (
+          <div className="mt-4 text-xs text-gray-500">
+            Se o Supabase estiver com <b>Confirm email</b> ligado, você precisa confirmar no e-mail antes de conseguir entrar.
           </div>
         )}
-
-        {error && (
-          <div style={{ background: "#ffe5e5", color: "#b00020", padding: 10, borderRadius: 10 }}>
-            {error}
-          </div>
-        )}
-        {message && (
-          <div style={{ background: "#e7f7ee", color: "#0b6b2f", padding: 10, borderRadius: 10 }}>
-            {message}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            border: "none",
-            background: "#111",
-            color: "#fff",
-            cursor: "pointer",
-            opacity: loading ? 0.7 : 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-          }}
-        >
-          {loading ? "Aguarde..." : isStudent ? (studentMode === "signup" ? "Criar conta" : "Entrar") : "Entrar como Admin"}
-          <ArrowRight size={16} />
-        </button>
-      </form>
+      </div>
     </div>
   );
 };
