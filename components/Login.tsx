@@ -18,7 +18,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Admin (mantive simples: senha local)
+  // Admin (senha local via env)
   const [adminPassword, setAdminPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -32,18 +32,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   const validateEmail = (value: string) => value.includes("@") && value.includes(".");
 
-  const resetStudentFields = () => {
-    setName("");
-    setEmail("");
-    setPassword("");
-    setConfirmPassword("");
-  };
-
+  // ============ ALUNO: SIGNUP ============
   const handleStudentSignup = async () => {
     clearAlerts();
 
     if (!name.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-      setError("Por favor, preencha nome, e-mail e senha.");
+      setError("Por favor, preencha nome, e-mail, senha e confirmar senha.");
       return;
     }
 
@@ -58,60 +52,70 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
 
     if (password !== confirmPassword) {
-      setError("As senhas não conferem.");
+      setError("As senhas não coincidem.");
       return;
     }
 
-    setLoading(true);
-
     try {
+      setLoading(true);
+
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
         options: {
           data: {
-            name,
+            name: name.trim(),
             role: UserRole.STUDENT,
           },
         },
       });
 
       if (signUpError) {
+        console.error("SUPABASE SIGNUP ERROR:", signUpError);
         setError(signUpError.message);
         setLoading(false);
         return;
       }
 
-      // Observação: se Confirm email estiver ligado no Supabase, pode exigir confirmação no e-mail.
-      if (!data.user) {
-        setMessage("Conta criada. Verifique seu e-mail para confirmar o cadastro.");
+      // Quando "Confirm email" está ligado, pode não vir session.
+      // Mesmo assim o user costuma existir; mostramos instrução clara.
+      if (!data?.user) {
+        setError("Não foi possível criar o usuário. Tente novamente.");
         setLoading(false);
-        resetStudentFields();
-        setStudentMode("login");
         return;
       }
 
-      setMessage("Conta criada com sucesso!");
+      if (!data.session) {
+        setMessage(
+          "Conta criada! Verifique seu e-mail (e a caixa de spam) para confirmar antes do primeiro login."
+        );
+        setStudentMode("login");
+        setLoading(false);
+        return;
+      }
 
+      // Se veio session, já loga no app
       onLogin({
         id: data.user.id,
-        name,
-        email,
+        name: (data.user.user_metadata?.name as string) || name.trim(),
+        email: data.user.email || email.trim(),
         role: UserRole.STUDENT,
       });
 
       setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erro ao criar conta.");
+    } catch (err: any) {
+      console.error("CATCH SIGNUP ERROR:", err);
+      setError(err?.message || "Erro inesperado no cadastro.");
       setLoading(false);
     }
   };
 
+  // ============ ALUNO: LOGIN ============
   const handleStudentLogin = async () => {
     clearAlerts();
 
     if (!email.trim() || !password.trim()) {
-      setError("Por favor, preencha e-mail e senha.");
+      setError("Informe e-mail e senha.");
       return;
     }
 
@@ -120,54 +124,54 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       return;
     }
 
-    setLoading(true);
-
     try {
+      setLoading(true);
+
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
 
       if (signInError) {
+        console.error("SUPABASE SIGNIN ERROR:", signInError);
         setError(signInError.message);
         setLoading(false);
         return;
       }
 
-      if (!data.user) {
-        setError("Não foi possível autenticar. Tente novamente.");
+      if (!data?.user) {
+        setError("Não foi possível entrar. Confira seus dados.");
         setLoading(false);
         return;
       }
 
-      const metaName =
-        (data.user.user_metadata?.name as string | undefined) ||
-        (data.user.user_metadata?.full_name as string | undefined) ||
-        "";
-
       onLogin({
         id: data.user.id,
-        name: metaName,
-        email: data.user.email ?? email,
+        name: (data.user.user_metadata?.name as string) || "Aluno",
+        email: data.user.email || email.trim(),
         role: UserRole.STUDENT,
       });
 
       setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erro ao entrar.");
+    } catch (err: any) {
+      console.error("CATCH LOGIN ERROR:", err);
+      setError(err?.message || "Erro ao entrar.");
       setLoading(false);
     }
   };
 
+  // ============ ADMIN: LOGIN (SENHA LOCAL) ============
   const handleAdminLogin = () => {
     clearAlerts();
 
+    // Suporte a variações e ao typo PASSAWORD que você criou no Netlify
     const envAdmin =
+      (import.meta as any).env?.VITE_ADMIN_PASSAWORD ||
       (import.meta as any).env?.VITE_ADMIN_PASSWORD ||
       (import.meta as any).env?.ADMIN_PASSWORD ||
       "";
 
-    // Se você não configurar env, ele vai usar um padrão (troque depois!)
+    // Sem variável definida, usa padrão (NÃO recomendado para produção)
     const ADMIN_PASSWORD = envAdmin || "admin123";
 
     if (!adminPassword.trim()) {
@@ -188,39 +192,48 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     });
   };
 
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // ============ UI HELPERS ============
+  const onSwitchRole = (student: boolean) => {
+    clearAlerts();
+    setIsStudent(student);
 
-    if (isStudent) {
-      if (studentMode === "signup") return void handleStudentSignup();
-      return void handleStudentLogin();
-    }
-
-    return void handleAdminLogin();
+    // limpa campos ao alternar
+    setName("");
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setAdminPassword("");
   };
 
-  const title = isStudent ? "Aluno" : "Admin";
+  const onSwitchStudentMode = (mode: "login" | "signup") => {
+    clearAlerts();
+    setStudentMode(mode);
+
+    // limpa apenas campos sensíveis
+    setPassword("");
+    setConfirmPassword("");
+  };
+
+  const showConfirmEmailHint = isStudent && studentMode === "login";
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl shadow-lg p-6 bg-white">
-        <div className="flex flex-col items-center mb-6">
+    <div className="min-h-screen w-full flex items-center justify-center p-6 bg-gray-50">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow p-6">
+        <div className="flex items-center justify-center mb-4">
           <Logo />
-          <h1 className="text-xl font-semibold mt-3">HistoMed</h1>
-          <p className="text-sm text-gray-500">Acesso ao aplicativo</p>
         </div>
 
-        <div className="flex gap-2 mb-4">
+        <h1 className="text-2xl font-semibold mb-1">HistoMed</h1>
+        <p className="text-gray-600 mb-4">Acesso ao aplicativo</p>
+
+        {/* Role switch */}
+        <div className="flex gap-2 mb-3">
           <button
             type="button"
-            className={`flex-1 rounded-lg px-3 py-2 flex items-center justify-center gap-2 border ${
-              isStudent ? "bg-black text-white" : "bg-white text-black"
+            onClick={() => onSwitchRole(true)}
+            className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border ${
+              isStudent ? "bg-black text-white" : "bg-white text-gray-800"
             }`}
-            onClick={() => {
-              clearAlerts();
-              setIsStudent(true);
-              setStudentMode("signup");
-            }}
           >
             <UserIcon size={18} />
             Aluno
@@ -228,72 +241,81 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <button
             type="button"
-            className={`flex-1 rounded-lg px-3 py-2 flex items-center justify-center gap-2 border ${
-              !isStudent ? "bg-black text-white" : "bg-white text-black"
+            onClick={() => onSwitchRole(false)}
+            className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border ${
+              !isStudent ? "bg-black text-white" : "bg-white text-gray-800"
             }`}
-            onClick={() => {
-              clearAlerts();
-              setIsStudent(false);
-            }}
           >
             <Lock size={18} />
             Admin
           </button>
         </div>
 
+        {/* Student mode switch */}
         {isStudent && (
           <div className="flex gap-2 mb-4">
             <button
               type="button"
-              className={`flex-1 rounded-lg px-3 py-2 border ${
+              onClick={() => onSwitchStudentMode("signup")}
+              className={`flex-1 px-4 py-2 rounded-lg border ${
                 studentMode === "signup" ? "bg-gray-100" : "bg-white"
               }`}
-              onClick={() => {
-                clearAlerts();
-                setStudentMode("signup");
-              }}
             >
               Criar conta
             </button>
-
             <button
               type="button"
-              className={`flex-1 rounded-lg px-3 py-2 border ${
+              onClick={() => onSwitchStudentMode("login")}
+              className={`flex-1 px-4 py-2 rounded-lg border ${
                 studentMode === "login" ? "bg-gray-100" : "bg-white"
               }`}
-              onClick={() => {
-                clearAlerts();
-                setStudentMode("login");
-              }}
             >
               Entrar
             </button>
           </div>
         )}
 
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div className="text-sm font-medium text-gray-700">{title}</div>
+        {/* Alerts */}
+        {error && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 px-3 py-2">
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="mb-3 rounded-lg bg-green-50 border border-green-200 text-green-700 px-3 py-2">
+            {message}
+          </div>
+        )}
 
-          {isStudent && studentMode === "signup" && (
-            <div>
-              <label className="text-sm text-gray-600">Nome</label>
-              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
-                <UserIcon size={18} className="text-gray-400" />
-                <input
-                  className="w-full outline-none"
-                  placeholder="Nome completo"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                />
+        {/* Forms */}
+        {isStudent ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (studentMode === "signup") handleStudentSignup();
+              else handleStudentLogin();
+            }}
+            className="space-y-3"
+          >
+            {studentMode === "signup" && (
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Nome</label>
+                <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
+                  <UserIcon size={18} className="text-gray-400" />
+                  <input
+                    className="w-full outline-none"
+                    placeholder="Nome completo"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {isStudent && (
             <div>
-              <label className="text-sm text-gray-600">E-mail</label>
-              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+              <label className="block text-sm text-gray-700 mb-1">E-mail</label>
+              <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
                 <Mail size={18} className="text-gray-400" />
                 <input
                   className="w-full outline-none"
@@ -304,85 +326,91 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 />
               </div>
             </div>
-          )}
 
-          {isStudent && (
             <div>
-              <label className="text-sm text-gray-600">Senha</label>
-              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+              <label className="block text-sm text-gray-700 mb-1">Senha</label>
+              <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
                 <Lock size={18} className="text-gray-400" />
                 <input
+                  type="password"
                   className="w-full outline-none"
                   placeholder="mín. 6 caracteres"
-                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete={studentMode === "signup" ? "new-password" : "current-password"}
                 />
               </div>
             </div>
-          )}
 
-          {isStudent && studentMode === "signup" && (
-            <div>
-              <label className="text-sm text-gray-600">Confirmar senha</label>
-              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
-                <Lock size={18} className="text-gray-400" />
-                <input
-                  className="w-full outline-none"
-                  placeholder="repita a senha"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
+            {studentMode === "signup" && (
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Confirmar senha</label>
+                <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
+                  <Lock size={18} className="text-gray-400" />
+                  <input
+                    type="password"
+                    className="w-full outline-none"
+                    placeholder="repita a senha"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {!isStudent && (
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center gap-2 bg-black text-white rounded-lg px-4 py-2 disabled:opacity-60"
+            >
+              {loading ? "Carregando..." : studentMode === "signup" ? "Criar conta" : "Entrar"}
+              <ArrowRight size={18} />
+            </button>
+
+            {showConfirmEmailHint && (
+              <p className="text-xs text-gray-500">
+                Se o Supabase estiver com <b>Confirm email</b> ligado, você precisa confirmar no e-mail antes
+                de conseguir entrar.
+              </p>
+            )}
+          </form>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAdminLogin();
+            }}
+            className="space-y-3"
+          >
             <div>
-              <label className="text-sm text-gray-600">Senha do Admin</label>
-              <div className="mt-1 flex items-center gap-2 border rounded-lg px-3 py-2">
+              <label className="block text-sm text-gray-700 mb-1">Senha do Admin</label>
+              <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
                 <Lock size={18} className="text-gray-400" />
                 <input
-                  className="w-full outline-none"
-                  placeholder="senha do admin"
                   type="password"
+                  className="w-full outline-none"
+                  placeholder="Senha do Admin"
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   autoComplete="current-password"
                 />
               </div>
             </div>
-          )}
 
-          {error && (
-            <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-sm">
-              {error}
-            </div>
-          )}
+            <button
+              type="submit"
+              className="w-full inline-flex items-center justify-center gap-2 bg-black text-white rounded-lg px-4 py-2"
+            >
+              Entrar
+              <ArrowRight size={18} />
+            </button>
 
-          {message && (
-            <div className="rounded-lg bg-green-50 text-green-700 px-3 py-2 text-sm">
-              {message}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-black text-white py-3 flex items-center justify-center gap-2 disabled:opacity-60"
-            disabled={loading}
-          >
-            {loading ? "Carregando..." : isStudent ? (studentMode === "signup" ? "Criar conta" : "Entrar") : "Entrar"}
-            <ArrowRight size={18} />
-          </button>
-        </form>
-
-        {isStudent && (
-          <div className="mt-4 text-xs text-gray-500">
-            Se o Supabase estiver com <b>Confirm email</b> ligado, você precisa confirmar no e-mail antes de conseguir entrar.
-          </div>
+            <p className="text-xs text-gray-500">
+              Dica: a senha do admin vem do Netlify em <b>VITE_ADMIN_PASSAWORD</b> (ou VITE_ADMIN_PASSWORD).
+              Se não existir, cai no padrão <b>admin123</b>.
+            </p>
+          </form>
         )}
       </div>
     </div>
