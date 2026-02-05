@@ -59,16 +59,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     try {
       setLoading(true);
 
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            name: name.trim(),
-            role: UserRole.STUDENT,
-          },
-        },
-      });
+      const { data, error } = await supabase.auth.signUp({
+  email,
+  password,
+  options: {
+    data: { name: metaName, role: UserRole.STUDENT },
+    emailRedirectTo: window.location.origin,
+  },
+});
 
       if (signUpError) {
         console.error("SUPABASE SIGNUP ERROR:", signUpError);
